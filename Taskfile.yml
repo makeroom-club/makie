@@ -16,7 +16,7 @@ tasks:
       GOOS: "{{.TARGET_OS}}"
       GOARCH: "{{.TARGET_ARCH}}"
     cmds:
-      - go build -o main.exe .
+      - go build -o main.exe ./bot
 
   sd:run:
     aliases:
