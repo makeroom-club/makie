@@ -27,6 +27,13 @@
             "label": "Discord Bot User ID",
             "type": "string",
           },
+          {
+            "default": "denbot",
+            "description": "The Storyden robot ID used to generate Discord replies",
+            "id": "robot_id",
+            "label": "Robot ID",
+            "type": "string",
+          },
         ],
     },
 }

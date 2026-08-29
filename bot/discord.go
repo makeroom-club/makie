@@ -1,13 +1,68 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-const botName = "Makie"
+const (
+	botName               = "Makie"
+	typingRefreshInterval = 8 * time.Second
+)
+
+func (a *PluginApp) startDiscordTyping(ctx context.Context, session *discordgo.Session, channelID string) context.CancelFunc {
+	typingCtx, cancel := context.WithCancel(ctx)
+
+	if err := session.ChannelTyping(channelID); err != nil {
+		a.Logger.Warn("failed to start discord typing indicator", slog.String("error", err.Error()), slog.String("channel_id", channelID))
+	}
+
+	go func() {
+		ticker := time.NewTicker(typingRefreshInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				if err := session.ChannelTyping(channelID); err != nil {
+					a.Logger.Warn("failed to refresh discord typing indicator", slog.String("error", err.Error()), slog.String("channel_id", channelID))
+				}
+			}
+		}
+	}()
+
+	return cancel
+}
+
+func discordMessageAuthor(message *discordgo.Message) string {
+	if message.Author == nil {
+		return ""
+	}
+
+	username := strings.TrimSpace(message.Author.Username)
+	displayName := ""
+	if message.Member != nil {
+		displayName = strings.TrimSpace(message.Member.Nick)
+	}
+	if displayName == "" {
+		displayName = strings.TrimSpace(message.Author.GlobalName)
+	}
+	if displayName == "" {
+		displayName = username
+	}
+
+	if username == "" {
+		return displayName
+	}
+	return fmt.Sprintf("%s (@%s)", displayName, username)
+}
 
 func (a *PluginApp) connectDiscord(token string) {
 	if a.discord != nil {

@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 )
 
 const (
 	initialConfigRetryInterval = 2 * time.Second
 	configureTimeout           = 15 * time.Second
+	defaultRobotID             = "denbot"
 )
 
 type pluginConfig struct {
 	DiscordToken string
 	DiscordBotID string
+	RobotID      string
 }
 
 func (a *PluginApp) HandleConfigure(ctx context.Context, raw map[string]any) error {
@@ -91,10 +94,16 @@ func parseConfig(raw map[string]any) (pluginConfig, bool, error) {
 	if !ok || botID == "" {
 		return pluginConfig{}, false, nil
 	}
+	robotID, _ := raw["robot_id"].(string)
+	robotID = strings.TrimSpace(robotID)
+	if robotID == "" {
+		robotID = defaultRobotID
+	}
 
 	return pluginConfig{
 		DiscordToken: token,
 		DiscordBotID: botID,
+		RobotID:      robotID,
 	}, true, nil
 }
 

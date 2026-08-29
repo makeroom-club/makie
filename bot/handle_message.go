@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Southclaws/opt"
+	"github.com/Southclaws/storyden/lib/plugin/rpc"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -16,9 +18,8 @@ const (
 )
 
 func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	a.Logger.Info("received ANY discord message", slog.String("author_id", m.Author.ID), slog.String("bot_id", s.State.User.ID), slog.Int("mentions", len(m.Mentions)))
+	a.Logger.Info("received discord message", slog.String("author_id", m.Author.ID), slog.Int("mentions", len(m.Mentions)))
 
-	// Ignore bot messages.
 	if m.Author.ID == s.State.User.ID {
 		a.Logger.Debug("ignoring own message")
 		return
@@ -68,20 +69,29 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 
 	// ChannelMessages with a before-ID returns messages before the triggering
 	// message, newest-first, so add the trigger explicitly at the front (it's
-	// newer than everything fetched). buildConversationPrompt reads this slice
-	// newest-first and prints it in reverse, so the trigger must be at index 0
-	// to end up last in the rendered prompt. Without this, the robot only sees
-	// the preceding conversation and can answer the wrong message.
+	// newer than everything fetched). buildRobotMessages reads this slice
+	// newest-first and emits it in chronological order, so the trigger must be
+	// at index 0 to become the final user message.
 	messages = append([]*discordgo.Message{m.Message}, messages...)
 
-	prompt := buildConversationPrompt(messages, cfg.DiscordBotID, botName)
+	robotMessages := buildRobotMessages(messages, cfg.DiscordBotID)
 
-	a.Logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", robotID))
+	a.Logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", cfg.RobotID))
+	stopTyping := a.startDiscordTyping(ctx, s, m.ChannelID)
 
-	// Call robot to generate response.
-	response, err := a.Plugin.RunRobot(ctx, robotID, prompt)
+	run, err := a.Plugin.RunRobot(ctx, rpc.RPCRequestRobotRunParams{
+		Mode:     rpc.RobotRunModeConversation,
+		RobotID:  cfg.RobotID,
+		Messages: robotMessages,
+	})
+	stopTyping()
 	if err != nil {
 		a.Logger.Error("robot call failed", slog.String("error", err.Error()), slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
+		return
+	}
+	response, ok := run.FinalText.Get()
+	if !ok || strings.TrimSpace(response) == "" {
+		a.Logger.Error("robot response did not contain final text", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
 		return
 	}
 
@@ -97,43 +107,32 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	a.Logger.Info("successfully replied to message", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID), slog.String("user_message", m.Content), slog.String("bot_response", response))
 }
 
-// buildConversationPrompt renders a Discord message history into an
-// XML-tagged prompt for the robot. XML-style markers give the model an
-// unambiguous way to tell one message apart from the next even when content
-// spans multiple lines or itself contains dashes/colons, and the bot's own
-// past messages are flagged with is_you="true" so it knows what it already
-// said. The instruction to answer only the last message keeps the model from
-// latching onto an earlier question that happens to be easier to answer.
-func buildConversationPrompt(messages []*discordgo.Message, botID, botName string) string {
-	var sb strings.Builder
+// buildRobotMessages converts Discord's newest-first history into the
+// chronological user/assistant message sequence expected by robot_run.
+func buildRobotMessages(messages []*discordgo.Message, botID string) []rpc.RobotRunMessage {
+	history := make([]rpc.RobotRunMessage, 0, len(messages))
 
-	fmt.Fprintf(
-		&sb,
-		"You are %s, a Discord bot with user ID %s. The <discord_history> block below contains a snippet of recent messages from a Discord channel, oldest first. Each message is wrapped in a <message> tag with author, author_id, and time attributes. Messages you previously sent have is_you=\"true\".\n\n",
-		botName, botID,
-	)
-
-	sb.WriteString("<discord_history>\n")
-	// Reverse to chronological order (oldest first); ChannelMessages returns
-	// newest first.
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 
-		isYou := msg.Author.ID == botID
+		role := rpc.RobotRunMessageRoleUser
+		if msg.Author.ID == botID {
+			role = rpc.RobotRunMessageRoleAssistant
+		}
+
 		content := msg.Content
-		if content == "" {
+		if strings.TrimSpace(content) == "" {
 			content = "(no text content)"
 		}
 
-		fmt.Fprintf(
-			&sb,
-			"  <message author=%q author_id=%q time=%q is_you=%q>\n    %s\n  </message>\n",
-			msg.Author.Username, msg.Author.ID, msg.Timestamp.Format("15:04:05"), fmt.Sprintf("%t", isYou), content,
-		)
+		history = append(history, rpc.RobotRunMessage{
+			Role:    role,
+			Content: content,
+			Author: opt.NewIf(discordMessageAuthor(msg), func(author string) bool {
+				return strings.TrimSpace(author) != ""
+			}),
+		})
 	}
-	sb.WriteString("</discord_history>\n\n")
 
-	sb.WriteString("Reply naturally and directly to the LAST <message> in <discord_history>. Do not answer or continue any earlier message.")
-
-	return sb.String()
+	return history
 }

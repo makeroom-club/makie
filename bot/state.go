@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -17,8 +18,6 @@ import (
 var personalityTemplateSource string
 
 var personalityTemplate = template.Must(template.New("personality").Parse(personalityTemplateSource))
-
-const robotID = "default"
 
 func (a *PluginApp) handlePersonalityCommand(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	if len(data.Options) == 0 {
@@ -61,6 +60,11 @@ func (a *PluginApp) handlePersonalityCommand(s *discordgo.Session, i *discordgo.
 }
 
 func (a *PluginApp) updatePersonality(ctx context.Context, personality string) error {
+	cfg, configured := a.currentConfig()
+	if !configured {
+		return errors.New("configuration is incomplete")
+	}
+
 	var playbook strings.Builder
 	if err := personalityTemplate.Execute(&playbook, struct{ Personality string }{Personality: personality}); err != nil {
 		return fmt.Errorf("render personality template: %w", err)
@@ -72,7 +76,7 @@ func (a *PluginApp) updatePersonality(ctx context.Context, personality string) e
 		return fmt.Errorf("build api client: %w", err)
 	}
 
-	resp, err := client.RobotUpdateWithResponse(ctx, robotID, openapi.RobotMutableProps{
+	resp, err := client.RobotUpdateWithResponse(ctx, cfg.RobotID, openapi.RobotMutableProps{
 		Playbook: &rendered,
 	})
 	if err != nil {
