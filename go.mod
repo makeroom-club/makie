@@ -6,6 +6,7 @@ require (
 	github.com/Southclaws/opt v0.6.1
 	github.com/Southclaws/storyden v1.26.16-0.20260829160302-76e9668a329b
 	github.com/bwmarrin/discordgo v0.29.0
+	github.com/rs/xid v1.6.0
 )
 
 require (
@@ -72,7 +73,6 @@ require (
 	github.com/redis/rueidis v1.0.66 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rs/xid v1.6.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/samber/lo v1.52.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect

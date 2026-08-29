@@ -71,9 +71,14 @@ func (a *PluginApp) applyConfig(ctx context.Context, raw map[string]any, require
 
 	a.mu.Lock()
 	oldToken := a.config.DiscordToken
+	oldBotID := a.config.DiscordBotID
+	oldRobotID := a.config.RobotID
 	a.config = cfg
 	a.configured = true
 	a.mu.Unlock()
+	if oldBotID != cfg.DiscordBotID || oldRobotID != cfg.RobotID {
+		a.resetConversationSession()
+	}
 
 	// Reconnect Discord if token changed.
 	if oldToken != cfg.DiscordToken {
@@ -112,6 +117,7 @@ func (a *PluginApp) setUnconfigured() {
 	a.config = pluginConfig{}
 	a.configured = false
 	a.mu.Unlock()
+	a.resetConversationSession()
 
 	if a.discord != nil {
 		a.discord.Close()

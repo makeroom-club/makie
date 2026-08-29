@@ -42,6 +42,11 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 		a.Logger.Debug("message from target user did not mention bot", slog.String("user_id", m.Author.ID))
 		return
 	}
+	if !a.beginChannelRun(m.ChannelID) {
+		a.Logger.Info("ignoring mention while active in another channel", slog.String("channel_id", m.ChannelID), slog.String("user_id", m.Author.ID))
+		return
+	}
+	defer a.finishChannelRun()
 
 	a.Logger.Info("received mention from target user, will respond", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
 
@@ -74,19 +79,57 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	// at index 0 to become the final user message.
 	messages = append([]*discordgo.Message{m.Message}, messages...)
 
-	robotMessages := buildRobotMessages(messages, cfg.DiscordBotID)
+	conversationRun, err := a.prepareConversationRun(ctx, m.ChannelID, m.Timestamp, messages)
+	if err != nil {
+		a.Logger.Warn("failed to prepare conversation run", slog.String("error", err.Error()), slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
+		return
+	}
+	if len(conversationRun.Messages) == 0 {
+		a.Logger.Debug("ignoring invocation with no new discord messages", slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
+		return
+	}
+	robotMessages := buildRobotMessages(conversationRun.Messages, cfg.DiscordBotID)
 
-	a.Logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", cfg.RobotID), slog.Int("message_count", len(robotMessages)))
-	stopTyping := a.startDiscordTyping(ctx, s, m.ChannelID)
-
-	run, err := a.Plugin.RunRobot(ctx, rpc.RPCRequestRobotRunParams{
+	sessionIDLog := "new"
+	params := rpc.RPCRequestRobotRunParams{
 		Mode:     rpc.RobotRunModeConversation,
 		RobotID:  cfg.RobotID,
 		Messages: robotMessages,
-	})
+	}
+	if !conversationRun.SessionID.IsNil() {
+		sessionIDLog = conversationRun.SessionID.String()
+		params.SessionID = opt.New(conversationRun.SessionID)
+	}
+
+	a.Logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", cfg.RobotID), slog.String("session_id", sessionIDLog), slog.Bool("new_session", conversationRun.IsNew), slog.Int("message_count", len(robotMessages)))
+	stopTyping := a.startDiscordTyping(ctx, s, m.ChannelID)
+
+	run, err := a.Plugin.RunRobot(ctx, params)
 	stopTyping()
+
+	sessionID := conversationRun.SessionID
+	if run != nil {
+		if returnedSessionID, ok := run.SessionID.Get(); ok {
+			if conversationRun.IsNew {
+				if !a.establishConversationSession(conversationRun, returnedSessionID) {
+					a.Logger.Warn("conversation session changed before robot call completed", slog.String("returned_session_id", returnedSessionID.String()), slog.String("channel_id", m.ChannelID))
+				}
+				sessionID = returnedSessionID
+			} else if returnedSessionID != sessionID {
+				a.Logger.Error("robot returned an unexpected session ID", slog.String("expected_session_id", sessionID.String()), slog.String("returned_session_id", returnedSessionID.String()))
+				return
+			}
+		}
+	}
+	if conversationRun.IsNew && sessionID.IsNil() {
+		a.failConversationSession(conversationRun)
+	}
 	if err != nil {
 		a.Logger.Error("robot call failed", slog.String("error", err.Error()), slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
+		return
+	}
+	if sessionID.IsNil() {
+		a.Logger.Error("robot response did not contain a session ID", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
 		return
 	}
 	response, ok := run.FinalText.Get()
@@ -98,8 +141,7 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	a.Logger.Info("robot generated response", slog.String("user_id", m.Author.ID), slog.String("response_length", fmt.Sprintf("%d", len(response))))
 
 	// Post response back to Discord as a reply.
-	_, err = s.ChannelMessageSendReply(m.ChannelID, response, m.Reference())
-	if err != nil {
+	if err := a.sendConversationReply(s, m.ChannelID, response, m.Reference(), sessionID); err != nil {
 		a.Logger.Error("failed to send discord reply", slog.String("error", err.Error()), slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID), slog.String("channel_id", m.ChannelID))
 		return
 	}

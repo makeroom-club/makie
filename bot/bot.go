@@ -17,4 +17,9 @@ type PluginApp struct {
 	configured bool
 
 	discord *discordgo.Session
+
+	stateMu         sync.Mutex
+	activeChannelID string
+	activeRuns      int
+	conversation    conversationSessionState
 }
