@@ -8,6 +8,13 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// testBotID and testBotName stand in for the config-supplied bot identity
+// that buildConversationPrompt receives at runtime.
+const (
+	testBotID   = "1400000000000000001"
+	testBotName = "Makie"
+)
+
 // TestBuildConversationPromptExample prints an example of the prompt sent to
 // the robot for a realistic Discord conversation. Run with:
 //
@@ -29,7 +36,7 @@ func TestBuildConversationPromptExample(t *testing.T) {
 	fetched := []*discordgo.Message{
 		{
 			ID:        "8",
-			Author:    user(botID, botName),
+			Author:    user(testBotID, testBotName),
 			Content:   "the magnetron agrees with gremlin here",
 			Timestamp: at(75),
 		},
@@ -53,14 +60,14 @@ func TestBuildConversationPromptExample(t *testing.T) {
 		},
 		{
 			ID:        "4",
-			Author:    user(botID, botName),
+			Author:    user(testBotID, testBotName),
 			Content:   "Hual remains an unresolved transmission. Ask him yourself, I'm not writing his biography.",
 			Timestamp: at(15),
 		},
 		{
 			ID:        "3",
 			Author:    user("218743840243318784", "gremlin"),
-			Content:   "<@1309527755339075634> thoughts on hual",
+			Content:   fmt.Sprintf("<@%s> thoughts on hual", testBotID),
 			Timestamp: at(0),
 		},
 	}
@@ -70,13 +77,13 @@ func TestBuildConversationPromptExample(t *testing.T) {
 	// line in handleDiscordMessage.
 	trigger := &discordgo.Message{
 		ID:        "9",
-		Author:    user("534768504943935500", "notif_goblin"),
-		Content:   "<@1309527755339075634> ok but seriously what should I get southclaws for his birthday",
+		Author:    user("285684164613898243", "southclaws"),
+		Content:   fmt.Sprintf("<@%s> ok but seriously what should I get southclaws for his birthday", testBotID),
 		Timestamp: at(90),
 	}
 	messages := append([]*discordgo.Message{trigger}, fetched...)
 
-	prompt := buildConversationPrompt(messages)
+	prompt := buildConversationPrompt(messages, testBotID, testBotName)
 
 	fmt.Println("=== PROMPT OUTPUT ===")
 	fmt.Println(prompt)

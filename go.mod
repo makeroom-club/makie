@@ -1,4 +1,4 @@
-module storyden.local/plugins/discord-chatty-bot
+module github.com/makeroom-club/makie
 
 go 1.26.4
 

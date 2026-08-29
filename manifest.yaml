@@ -1,26 +1,32 @@
 {
-  "access": {
-    "handle": "discord-chatty-bot",
-    "name": "Discord Chatty Bot",
-    "permissions": [
-      "USE_ROBOTS",
-      "MANAGE_ROBOTS"
-    ]
-  },
+  "id": "makie",
+  "name": "Makie",
+  "version": "0.1.0",
+  "description": "Discord bot that replies to a single member's mentions using a Storyden robot",
+  "access":
+    {
+      "handle": "makie",
+      "name": "Makie",
+      "permissions": ["USE_ROBOTS", "MANAGE_ROBOTS"],
+    },
   "author": "southclaws",
   "command": "./main.exe",
-  "configuration_schema": {
-    "fields": [
-      {
-        "description": "The Discord bot token for authentication",
-        "id": "discord_token",
-        "label": "Discord Bot Token",
-        "type": "string"
-      }
-    ]
-  },
-  "description": "Chatty Discord bot that sometimes replies to one member using a Storyden robot",
-  "id": "discord-chatty-bot",
-  "name": "Discord Chatty Bot",
-  "version": "0.1.0"
+  "configuration_schema":
+    {
+      "fields":
+        [
+          {
+            "description": "The Discord bot token for authentication",
+            "id": "discord_token",
+            "label": "Discord Bot Token",
+            "type": "string",
+          },
+          {
+            "description": "The Discord user ID of the Makie bot account, used to detect mentions and flag its own messages in conversation history",
+            "id": "discord_bot_id",
+            "label": "Discord Bot User ID",
+            "type": "string",
+          },
+        ],
+    },
 }

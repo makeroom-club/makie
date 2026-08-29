@@ -1,0 +1,52 @@
+name: Deploy plugin
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-makie
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Install on makeroom.club
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Test plugin
+        run: go test ./...
+
+      - name: Build plugin
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -o main.exe .
+
+      - name: Install sd from main
+        run: go install github.com/Southclaws/storyden/cmd/sd@main
+
+      - name: Authenticate with makeroom.club
+        env:
+          STORYDEN_ACCESS_KEY: ${{ secrets.STORYDEN_ACCESS_KEY }}
+        run: printf '%s' "$STORYDEN_ACCESS_KEY" | sd auth login https://makeroom.club --access-key-stdin
+
+      - name: Install plugin
+        run: sd plugin dev install

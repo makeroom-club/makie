@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"os"
 	"os/signal"
 	"strings"
@@ -24,23 +23,18 @@ var personalityTemplateSource string
 
 var personalityTemplate = template.Must(template.New("personality").Parse(personalityTemplateSource))
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 const (
 	initialConfigRetryInterval = 2 * time.Second
 	configureTimeout           = 15 * time.Second
-	targetUserID               = "285684164613898243"
-	botID                      = "1309527755339075634"
-	botName                    = "Makeroom"
-	robotID                    = "d94r50jara0c2aq6dpj0"
-	chatChance                 = 0.05 // 5% chance to reply
-	historyLimit               = 15   // messages of context to pull, including the trigger
+	botName                    = "Makie"
+	robotID                    = "default"
+	historyLimit               = 20              // messages of context to pull, including the trigger
+	historyWindow              = 5 * time.Minute // only messages within this window of now are kept
 )
 
 type pluginConfig struct {
 	DiscordToken string
+	DiscordBotID string
 }
 
 type pluginApp struct {
@@ -160,8 +154,14 @@ func parseConfig(raw map[string]any) (pluginConfig, bool, error) {
 		return pluginConfig{}, false, nil
 	}
 
+	botID, ok := raw["discord_bot_id"].(string)
+	if !ok || botID == "" {
+		return pluginConfig{}, false, nil
+	}
+
 	return pluginConfig{
 		DiscordToken: token,
+		DiscordBotID: botID,
 	}, true, nil
 }
 
@@ -224,48 +224,25 @@ func (a *pluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 		return
 	}
 
-	// Check if message is from target user or mentions the bot
-	isMentioned := false
-	for _, mention := range m.Mentions {
-		a.logger.Info("found mention", slog.String("mention_id", mention.ID), slog.String("bot_id", botID), slog.Bool("is_bot", mention.ID == botID))
-		if mention.ID == botID {
-			isMentioned = true
-			break
-		}
-	}
-
-	isFromTarget := m.Author.ID == targetUserID
-	shouldRespond := false
-
-	// Always respond to mentions
-	if isMentioned {
-		shouldRespond = true
-		a.logger.Info("received mention of bot, will respond", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
-	} else if isFromTarget {
-		// 5% chance to respond to target user
-		shouldRespond = rand.Float64() < chatChance
-		if shouldRespond {
-			a.logger.Info("received message from target user", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID), slog.String("content", m.Content))
-		} else {
-			a.logger.Debug("skipped reply due to probability", slog.String("user_id", m.Author.ID))
-			return
-		}
-	} else {
-		a.logger.Debug("message not from target user or mentioning bot", slog.String("user_id", m.Author.ID), slog.Bool("from_target", isFromTarget), slog.Bool("mentioned", isMentioned))
-		return
-	}
-
-	a.logger.Info("proceeding with response", slog.Bool("should_respond", shouldRespond), slog.String("user_id", m.Author.ID))
-
-	if !shouldRespond {
-		return
-	}
-
-	_, configured := a.currentConfig()
+	cfg, configured := a.currentConfig()
 	if !configured {
 		a.logger.Warn("plugin not configured, skipping reply", slog.String("user_id", m.Author.ID))
 		return
 	}
+
+	isMentioned := false
+	for _, mention := range m.Mentions {
+		if mention.ID == cfg.DiscordBotID {
+			isMentioned = true
+			break
+		}
+	}
+	if !isMentioned {
+		a.logger.Debug("message from target user did not mention bot", slog.String("user_id", m.Author.ID))
+		return
+	}
+
+	a.logger.Info("received mention from target user, will respond", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -278,6 +255,17 @@ func (a *pluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 		messages = []*discordgo.Message{}
 	}
 
+	// ChannelMessages returns messages newest-first, so once we hit one older
+	// than the window cutoff every remaining message is also older; truncate
+	// from there instead of keeping the full historyLimit.
+	cutoff := time.Now().Add(-historyWindow)
+	for i, msg := range messages {
+		if msg.Timestamp.Before(cutoff) {
+			messages = messages[:i]
+			break
+		}
+	}
+
 	// ChannelMessages with a before-ID returns messages before the triggering
 	// message, newest-first, so add the trigger explicitly at the front (it's
 	// newer than everything fetched). buildConversationPrompt reads this slice
@@ -286,7 +274,7 @@ func (a *pluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	// the preceding conversation and can answer the wrong message.
 	messages = append([]*discordgo.Message{m.Message}, messages...)
 
-	prompt := buildConversationPrompt(messages)
+	prompt := buildConversationPrompt(messages, cfg.DiscordBotID, botName)
 
 	a.logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", robotID))
 
@@ -316,10 +304,11 @@ func (a *pluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 // past messages are flagged with is_you="true" so it knows what it already
 // said. The instruction to answer only the last message keeps the model from
 // latching onto an earlier question that happens to be easier to answer.
-func buildConversationPrompt(messages []*discordgo.Message) string {
+func buildConversationPrompt(messages []*discordgo.Message, botID, botName string) string {
 	var sb strings.Builder
 
-	fmt.Fprintf(&sb,
+	fmt.Fprintf(
+		&sb,
 		"You are %s, a Discord bot with user ID %s. The <discord_history> block below contains a snippet of recent messages from a Discord channel, oldest first. Each message is wrapped in a <message> tag with author, author_id, and time attributes. Messages you previously sent have is_you=\"true\".\n\n",
 		botName, botID,
 	)
@@ -336,7 +325,8 @@ func buildConversationPrompt(messages []*discordgo.Message) string {
 			content = "(no text content)"
 		}
 
-		fmt.Fprintf(&sb,
+		fmt.Fprintf(
+			&sb,
 			"  <message author=%q author_id=%q time=%q is_you=%q>\n    %s\n  </message>\n",
 			msg.Author.Username, msg.Author.ID, msg.Timestamp.Format("15:04:05"), fmt.Sprintf("%t", isYou), content,
 		)
