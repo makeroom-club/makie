@@ -76,7 +76,7 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 
 	robotMessages := buildRobotMessages(messages, cfg.DiscordBotID)
 
-	a.Logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", cfg.RobotID))
+	a.Logger.Info("calling robot to generate response", slog.String("user_id", m.Author.ID), slog.String("robot_id", cfg.RobotID), slog.Int("message_count", len(robotMessages)))
 	stopTyping := a.startDiscordTyping(ctx, s, m.ChannelID)
 
 	run, err := a.Plugin.RunRobot(ctx, rpc.RPCRequestRobotRunParams{
