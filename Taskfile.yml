@@ -1,0 +1,36 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  TARGET_OS:
+    sh: go env GOOS
+  TARGET_ARCH:
+    sh: go env GOARCH
+
+tasks:
+  build:
+    desc: Build the plugin for the requested OS and architecture
+    env:
+      CGO_ENABLED: 0
+      GOOS: "{{.TARGET_OS}}"
+      GOARCH: "{{.TARGET_ARCH}}"
+    cmds:
+      - go build -o main.exe .
+
+  sd:run:
+    aliases:
+      - sd
+    desc: Build and run the plugin against the current Storyden context
+    cmds:
+      - task: build
+      - sd plugin dev run
+
+  sd:install:
+    desc: Build and install the plugin on the Linux Storyden instance
+    cmds:
+      - task: build
+        vars:
+          TARGET_OS: linux
+          TARGET_ARCH: amd64
+      - sd plugin dev install
