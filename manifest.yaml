@@ -1,0 +1,26 @@
+{
+  "access": {
+    "handle": "discord-chatty-bot",
+    "name": "Discord Chatty Bot",
+    "permissions": [
+      "USE_ROBOTS",
+      "MANAGE_ROBOTS"
+    ]
+  },
+  "author": "southclaws",
+  "command": "./main.exe",
+  "configuration_schema": {
+    "fields": [
+      {
+        "description": "The Discord bot token for authentication",
+        "id": "discord_token",
+        "label": "Discord Bot Token",
+        "type": "string"
+      }
+    ]
+  },
+  "description": "Chatty Discord bot that sometimes replies to one member using a Storyden robot",
+  "id": "discord-chatty-bot",
+  "name": "Discord Chatty Bot",
+  "version": "0.1.0"
+}
