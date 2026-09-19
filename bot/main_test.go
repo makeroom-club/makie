@@ -78,3 +78,48 @@ func TestBuildRobotMessages(t *testing.T) {
 		t.Fatalf("buildRobotMessages() = %#v, want %#v", got, want)
 	}
 }
+
+func TestDiscordMessageContentMarksReplies(t *testing.T) {
+	message := &discordgo.Message{
+		Type:    discordgo.MessageTypeReply,
+		Content: "<@" + testBotID + "> is this true?",
+	}
+
+	want := "[Reply to another Discord message]\n<@" + testBotID + "> is this true?"
+	if got := discordMessageContent(message); got != want {
+		t.Fatalf("reply content = %q, want %q", got, want)
+	}
+}
+
+func TestDiscordMessageMentionsBotFallsBackToRawMention(t *testing.T) {
+	message := &discordgo.Message{Content: "<@!" + testBotID + "> is this true?"}
+	if !discordMessageMentionsBot(message, testBotID) {
+		t.Fatal("discordMessageMentionsBot() = false, want true for raw nickname mention")
+	}
+}
+
+func TestInsertReferencedMessagePreservesNewestFirstOrder(t *testing.T) {
+	base := time.Date(2026, 8, 8, 14, 30, 0, 0, time.UTC)
+	message := func(id string, offset time.Duration) *discordgo.Message {
+		return &discordgo.Message{ID: id, Timestamp: base.Add(offset)}
+	}
+
+	history := []*discordgo.Message{
+		message("5", 5*time.Minute),
+		message("3", 3*time.Minute),
+	}
+	history = insertReferencedMessage(history, message("4", 4*time.Minute))
+
+	gotIDs := make([]string, len(history))
+	for i, msg := range history {
+		gotIDs[i] = msg.ID
+	}
+	if want := []string{"5", "4", "3"}; !reflect.DeepEqual(gotIDs, want) {
+		t.Fatalf("message order = %v, want %v", gotIDs, want)
+	}
+
+	history = insertReferencedMessage(history, message("4", 4*time.Minute))
+	if len(history) != 3 {
+		t.Fatalf("duplicate referenced message changed history length to %d, want 3", len(history))
+	}
+}
