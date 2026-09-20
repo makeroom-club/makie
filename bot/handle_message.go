@@ -31,24 +31,45 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 		return
 	}
 
-	isMentioned := false
-	for _, mention := range m.Mentions {
-		if mention.ID == cfg.DiscordBotID {
-			isMentioned = true
-			break
+	mentionsBot := discordMessageMentionsBot(m.Message, cfg.DiscordBotID)
+	triggerMessage := m.Message
+	var referenced *discordgo.Message
+	var referenceErr error
+	if !mentionsBot {
+		if m.Message == nil || m.Message.Type != discordgo.MessageTypeReply {
+			a.Logger.Debug("message from target user did not mention bot or reply to bot", slog.String("user_id", m.Author.ID))
+			return
+		}
+
+		// A direct reply to one of Makie's messages is also an invocation. We
+		// resolve the reference before returning so this still works when
+		// Discord omits ReferencedMessage from the gateway event.
+		referenced, referenceErr = resolveReferencedMessage(s, m.Message)
+		if referenceErr != nil {
+			a.Logger.Debug("failed to resolve referenced discord message", slog.String("error", referenceErr.Error()), slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
+			return
+		}
+		if !discordMessageAuthoredBy(referenced, cfg.DiscordBotID) {
+			a.Logger.Debug("message from target user did not mention bot or reply to bot", slog.String("user_id", m.Author.ID))
+			return
+		}
+
+		// Without the privileged Message Content intent, Discord may deliver an
+		// unmentioned guild reply without its text. Fetch the complete message so
+		// a bare reply is still useful to the robot.
+		if fetched, err := s.ChannelMessage(m.ChannelID, m.ID); err != nil {
+			a.Logger.Debug("failed to fetch complete direct reply", slog.String("error", err.Error()), slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
+		} else if fetched != nil {
+			triggerMessage = fetched
 		}
 	}
-	if !isMentioned {
-		a.Logger.Debug("message from target user did not mention bot", slog.String("user_id", m.Author.ID))
-		return
-	}
 	if !a.beginChannelRun(m.ChannelID) {
-		a.Logger.Info("ignoring mention while active in another channel", slog.String("channel_id", m.ChannelID), slog.String("user_id", m.Author.ID))
+		a.Logger.Info("ignoring invocation while active in another channel", slog.String("channel_id", m.ChannelID), slog.String("user_id", m.Author.ID))
 		return
 	}
 	defer a.finishChannelRun()
 
-	a.Logger.Info("received mention from target user, will respond", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
+	a.Logger.Info("received invocation from target user, will respond", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -77,7 +98,15 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	// newer than everything fetched). buildRobotMessages reads this slice
 	// newest-first and emits it in chronological order, so the trigger must be
 	// at index 0 to become the final user message.
-	messages = append([]*discordgo.Message{m.Message}, messages...)
+	if referenced == nil && referenceErr == nil {
+		referenced, referenceErr = resolveReferencedMessage(s, m.Message)
+	}
+	if referenceErr != nil {
+		a.Logger.Debug("failed to fetch referenced discord message", slog.String("error", referenceErr.Error()), slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
+	} else {
+		messages = insertReferencedMessage(messages, referenced)
+	}
+	messages = append([]*discordgo.Message{triggerMessage}, messages...)
 
 	conversationRun, err := a.prepareConversationRun(ctx, m.ChannelID, m.Timestamp, messages)
 	if err != nil {
@@ -149,6 +178,80 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	a.Logger.Info("successfully replied to message", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID), slog.String("user_message", m.Content), slog.String("bot_response", response))
 }
 
+func discordMessageMentionsBot(message *discordgo.Message, botID string) bool {
+	if message == nil {
+		return false
+	}
+
+	for _, mention := range message.Mentions {
+		if mention != nil && mention.ID == botID {
+			return true
+		}
+	}
+
+	// A bot mention is normally decoded into Mentions. Keep the raw-token
+	// fallback because Discord may omit the parsed mention data when a gateway
+	// payload is partially redacted by message-content intent settings.
+	return strings.Contains(message.Content, "<@"+botID+">") ||
+		strings.Contains(message.Content, "<@!"+botID+">")
+}
+
+func discordMessageAuthoredBy(message *discordgo.Message, authorID string) bool {
+	return message != nil && message.Author != nil && message.Author.ID == authorID
+}
+
+// resolveReferencedMessage returns the message that triggered a Discord reply.
+// Discord normally includes it in the gateway event, but can omit it when the
+// referenced message cannot be resolved. Fetching it by ID lets the robot see
+// the context even when the original message is outside the recent history
+// window.
+func resolveReferencedMessage(session *discordgo.Session, message *discordgo.Message) (*discordgo.Message, error) {
+	if message == nil {
+		return nil, nil
+	}
+	if message.ReferencedMessage != nil && message.ReferencedMessage.Author != nil && message.ReferencedMessage.Author.ID != "" {
+		return message.ReferencedMessage, nil
+	}
+	if message.MessageReference == nil || message.MessageReference.MessageID == "" {
+		return nil, nil
+	}
+
+	channelID := message.MessageReference.ChannelID
+	if channelID == "" {
+		channelID = message.ChannelID
+	}
+	return session.ChannelMessage(channelID, message.MessageReference.MessageID)
+}
+
+// insertReferencedMessage keeps messages in Discord's newest-first order and
+// avoids adding the referenced message twice when it is already in the recent
+// channel history.
+func insertReferencedMessage(messages []*discordgo.Message, referenced *discordgo.Message) []*discordgo.Message {
+	if referenced == nil {
+		return messages
+	}
+	if referenced.ID != "" {
+		for _, message := range messages {
+			if message != nil && message.ID == referenced.ID {
+				return messages
+			}
+		}
+	}
+
+	insertAt := len(messages)
+	for i, message := range messages {
+		if message != nil && referenced.Timestamp.After(message.Timestamp) {
+			insertAt = i
+			break
+		}
+	}
+
+	messages = append(messages, nil)
+	copy(messages[insertAt+1:], messages[insertAt:])
+	messages[insertAt] = referenced
+	return messages
+}
+
 // buildRobotMessages converts Discord's newest-first history into the
 // chronological user/assistant message sequence expected by robot_run.
 func buildRobotMessages(messages []*discordgo.Message, botID string) []rpc.RobotRunMessage {
@@ -162,14 +265,9 @@ func buildRobotMessages(messages []*discordgo.Message, botID string) []rpc.Robot
 			role = rpc.RobotRunMessageRoleAssistant
 		}
 
-		content := msg.Content
-		if strings.TrimSpace(content) == "" {
-			content = "(no text content)"
-		}
-
 		history = append(history, rpc.RobotRunMessage{
 			Role:    role,
-			Content: content,
+			Content: discordMessageContent(msg),
 			Author: opt.NewIf(discordMessageAuthor(msg), func(author string) bool {
 				return strings.TrimSpace(author) != ""
 			}),
@@ -177,4 +275,24 @@ func buildRobotMessages(messages []*discordgo.Message, botID string) []rpc.Robot
 	}
 
 	return history
+}
+
+// discordMessageContent formats the text sent to robot_run while preserving
+// the fact that a message is a Discord reply.
+func discordMessageContent(message *discordgo.Message) string {
+	if message == nil {
+		return "(no text content)"
+	}
+
+	content := strings.TrimSpace(message.Content)
+	if message.Type == discordgo.MessageTypeReply {
+		if content == "" {
+			content = "(no text content)"
+		}
+		content = "[Reply to another Discord message]\n" + content
+	}
+	if content == "" {
+		return "(no text content)"
+	}
+	return content
 }
