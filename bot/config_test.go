@@ -36,3 +36,19 @@ func TestParseConfigRobotID(t *testing.T) {
 		})
 	}
 }
+
+func TestParseConfigTypeSafeAPIKey(t *testing.T) {
+	for _, key := range []string{"", "  ", "  typesafe-secret  "} {
+		cfg, complete, err := parseConfig(map[string]any{"discord_token": "token", "discord_bot_id": "bot", "typesafe_api_key": key})
+		if err != nil || !complete {
+			t.Fatalf("optional key broke config: %v, %v", complete, err)
+		}
+		want := ""
+		if key == "  typesafe-secret  " {
+			want = "typesafe-secret"
+		}
+		if cfg.TypeSafeAPIKey != want {
+			t.Fatalf("key = %q, want %q", cfg.TypeSafeAPIKey, want)
+		}
+	}
+}

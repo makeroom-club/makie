@@ -19,6 +19,10 @@ const (
 )
 
 func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m == nil || m.Message == nil || m.Author == nil {
+		return
+	}
+
 	a.Logger.Info("received discord message", slog.String("author_id", m.Author.ID), slog.Int("mentions", len(m.Mentions)))
 
 	if m.Author.ID == s.State.User.ID {
@@ -30,6 +34,10 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 	if !configured {
 		a.Logger.Warn("plugin not configured, skipping reply", slog.String("user_id", m.Author.ID))
 		return
+	}
+
+	if m.GuildID != "" && cfg.TypeSafeAPIKey != "" {
+		go a.reactWithWiltedRose(s, m.Message, cfg.TypeSafeAPIKey)
 	}
 
 	mentionsBot := discordMessageMentionsBot(m.Message, cfg.DiscordBotID)

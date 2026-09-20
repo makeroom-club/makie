@@ -2,7 +2,7 @@
   "id": "makie",
   "name": "Makie",
   "version": "0.1.0",
-  "description": "Discord bot that replies to a single member's mentions using a Storyden robot",
+  "description": "Discord bot with Storyden robot replies and occasional wilted-rose reactions",
   "access":
     {
       "handle": "makie",
@@ -25,6 +25,12 @@
             "description": "The Discord user ID of the Makie bot account, used to detect mentions and flag its own messages in conversation history",
             "id": "discord_bot_id",
             "label": "Discord Bot User ID",
+            "type": "string",
+          },
+          {
+            "description": "Optional TypeSafe API key for server-wide 🥀 reactions. Enable Message Content Intent in the Discord Developer Portal first. Leave blank to disable.",
+            "id": "typesafe_api_key",
+            "label": "TypeSafe API Key",
             "type": "string",
           },
           {

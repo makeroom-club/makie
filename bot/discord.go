@@ -64,7 +64,7 @@ func discordMessageAuthor(message *discordgo.Message) string {
 	return fmt.Sprintf("%s (@%s)", displayName, username)
 }
 
-func (a *PluginApp) connectDiscord(token string) {
+func (a *PluginApp) connectDiscord(token string, reactionsEnabled bool) {
 	if a.discord != nil {
 		a.discord.Close()
 	}
@@ -79,6 +79,10 @@ func (a *PluginApp) connectDiscord(token string) {
 
 	// Enable required intents.
 	sess.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages
+
+	if reactionsEnabled {
+		sess.Identify.Intents |= discordgo.IntentMessageContent
+	}
 
 	a.Logger.Info("adding message handler")
 	sess.AddHandler(a.handleDiscordMessage)

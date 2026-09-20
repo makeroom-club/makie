@@ -15,9 +15,10 @@ const (
 )
 
 type pluginConfig struct {
-	DiscordToken string
-	DiscordBotID string
-	RobotID      string
+	DiscordToken   string
+	DiscordBotID   string
+	RobotID        string
+	TypeSafeAPIKey string
 }
 
 func (a *PluginApp) HandleConfigure(ctx context.Context, raw map[string]any) error {
@@ -73,6 +74,7 @@ func (a *PluginApp) applyConfig(ctx context.Context, raw map[string]any, require
 	oldToken := a.config.DiscordToken
 	oldBotID := a.config.DiscordBotID
 	oldRobotID := a.config.RobotID
+	oldReactionsEnabled := a.config.TypeSafeAPIKey != ""
 	a.config = cfg
 	a.configured = true
 	a.mu.Unlock()
@@ -80,9 +82,9 @@ func (a *PluginApp) applyConfig(ctx context.Context, raw map[string]any, require
 		a.resetConversationSession()
 	}
 
-	// Reconnect Discord if token changed.
-	if oldToken != cfg.DiscordToken {
-		a.connectDiscord(cfg.DiscordToken)
+	// Message Content is privileged, so only request it when reactions are enabled.
+	if oldToken != cfg.DiscordToken || oldReactionsEnabled != (cfg.TypeSafeAPIKey != "") {
+		a.connectDiscord(cfg.DiscordToken, cfg.TypeSafeAPIKey != "")
 	}
 
 	a.Logger.Info("plugin configuration applied")
@@ -105,10 +107,13 @@ func parseConfig(raw map[string]any) (pluginConfig, bool, error) {
 		robotID = defaultRobotID
 	}
 
+	apiKey, _ := raw["typesafe_api_key"].(string)
+
 	return pluginConfig{
-		DiscordToken: token,
-		DiscordBotID: botID,
-		RobotID:      robotID,
+		TypeSafeAPIKey: strings.TrimSpace(apiKey),
+		DiscordToken:   token,
+		DiscordBotID:   botID,
+		RobotID:        robotID,
 	}, true, nil
 }
 
