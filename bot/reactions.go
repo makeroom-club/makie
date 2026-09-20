@@ -24,20 +24,35 @@ func (a *PluginApp) reactWithWiltedRose(s *discordgo.Session, message *discordgo
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	react, err := shouldReactWithWiltedRose(ctx, http.DefaultClient, apiKey, message)
+	logger := a.Logger.With(
+		slog.String("guild_id", message.GuildID),
+		slog.String("channel_id", message.ChannelID),
+		slog.String("message_id", message.ID),
+	)
+	started := time.Now()
+	logger.Debug("evaluating wilted rose reaction", slog.Int("content_length", len(message.Content)))
+	react, score, err := shouldReactWithWiltedRose(ctx, http.DefaultClient, apiKey, message)
 	if err != nil {
-		a.Logger.Warn("wilted rose evaluation failed", slog.String("error", err.Error()), slog.String("message_id", message.ID))
+		logger.Warn("wilted rose evaluation failed", slog.String("error", err.Error()), slog.Duration("duration", time.Since(started)))
 		return
 	}
+	logger.Info("wilted rose evaluated",
+		slog.Float64("score", score),
+		slog.Bool("react", react),
+		slog.Int("content_length", len(message.Content)),
+		slog.Duration("duration", time.Since(started)),
+	)
 	if !react {
 		return
 	}
 	if err := s.MessageReactionAdd(message.ChannelID, message.ID, "🥀", discordgo.WithContext(ctx)); err != nil {
-		a.Logger.Warn("failed to add wilted rose reaction", slog.String("error", err.Error()), slog.String("message_id", message.ID))
+		logger.Warn("failed to add wilted rose reaction", slog.String("error", err.Error()))
+		return
 	}
+	logger.Info("added wilted rose reaction")
 }
 
-func shouldReactWithWiltedRose(ctx context.Context, client *http.Client, apiKey string, message *discordgo.Message) (bool, error) {
+func shouldReactWithWiltedRose(ctx context.Context, client *http.Client, apiKey string, message *discordgo.Message) (bool, float64, error) {
 	state := map[string]any{"message": message.Content}
 	if message.ReferencedMessage != nil {
 		state["replying_to"] = message.ReferencedMessage.Content
@@ -57,22 +72,22 @@ func shouldReactWithWiltedRose(ctx context.Context, client *http.Client, apiKey 
 		},
 	})
 	if err != nil {
-		return false, fmt.Errorf("encode evaluation: %w", err)
+		return false, 0, fmt.Errorf("encode evaluation: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.typesafe.ai/v1/systemone", bytes.NewReader(body))
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("evaluate reaction: %w", err)
+		return false, 0, fmt.Errorf("evaluate reaction: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		// Do not log upstream bodies: they may echo message content or credentials.
-		return false, fmt.Errorf("TypeSafe returned HTTP %d", response.StatusCode)
+		return false, 0, fmt.Errorf("TypeSafe returned HTTP %d", response.StatusCode)
 	}
 	var result struct {
 		Answers map[string]struct {
@@ -81,11 +96,11 @@ func shouldReactWithWiltedRose(ctx context.Context, client *http.Client, apiKey 
 		} `json:"answers"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&result); err != nil {
-		return false, fmt.Errorf("decode evaluation: %w", err)
+		return false, 0, fmt.Errorf("decode evaluation: %w", err)
 	}
 	answer := result.Answers["wilted_rose"]
 	if answer.Type != "noul" || answer.Noul == nil || *answer.Noul < 0 || *answer.Noul > 1 {
-		return false, fmt.Errorf("TypeSafe returned an invalid wilted_rose answer")
+		return false, 0, fmt.Errorf("TypeSafe returned an invalid wilted_rose answer")
 	}
-	return *answer.Noul >= 0.85, nil
+	return *answer.Noul >= 0.85, *answer.Noul, nil
 }

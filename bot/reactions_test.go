@@ -67,7 +67,7 @@ func TestWiltedRoseEvaluation(t *testing.T) {
 				}
 				return &http.Response{StatusCode: tt.status, Body: io.NopCloser(strings.NewReader(tt.body)), Header: make(http.Header)}, nil
 			})}
-			got, err := shouldReactWithWiltedRose(context.Background(), client, "test-key", &discordgo.Message{Content: "three hours on the wrong branch", ReferencedMessage: &discordgo.Message{Content: "how is the fix going?"}})
+			got, _, err := shouldReactWithWiltedRose(context.Background(), client, "test-key", &discordgo.Message{Content: "three hours on the wrong branch", ReferencedMessage: &discordgo.Message{Content: "how is the fix going?"}})
 			if got != tt.want || (err != nil) != tt.wantErr {
 				t.Fatalf("got %v, %v; want %v, error=%v", got, err, tt.want, tt.wantErr)
 			}
@@ -132,7 +132,7 @@ func TestWiltedRoseCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	client := &http.Client{Transport: reactionTransport(func(r *http.Request) (*http.Response, error) { return nil, r.Context().Err() })}
-	if react, err := shouldReactWithWiltedRose(ctx, client, "key", &discordgo.Message{}); react || err == nil {
+	if react, _, err := shouldReactWithWiltedRose(ctx, client, "key", &discordgo.Message{}); react || err == nil {
 		t.Fatalf("cancelled evaluation = %v, %v", react, err)
 	}
 }

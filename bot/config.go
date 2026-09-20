@@ -87,7 +87,7 @@ func (a *PluginApp) applyConfig(ctx context.Context, raw map[string]any, require
 		a.connectDiscord(cfg.DiscordToken, cfg.TypeSafeAPIKey != "")
 	}
 
-	a.Logger.Info("plugin configuration applied")
+	a.Logger.Info("plugin configuration applied", slog.Bool("wilted_rose_enabled", cfg.TypeSafeAPIKey != ""))
 	return nil
 }
 
