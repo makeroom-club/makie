@@ -7,7 +7,7 @@
     {
       "handle": "makie",
       "name": "Makie",
-      "permissions": ["USE_ROBOTS", "MANAGE_ROBOTS"],
+      "permissions": ["USE_ROBOTS", "MANAGE_ROBOTS", "UPLOAD_ASSET"],
     },
   "author": "southclaws",
   "command": "./main.exe",

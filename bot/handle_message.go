@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	historyLimit  = 20              // messages of context to pull, including the trigger
-	historyWindow = 5 * time.Minute // only messages within this window of now are kept
+	historyLimit    = 20              // messages of context to pull, including the trigger
+	historyWindow   = 5 * time.Minute // only messages within this window of now are kept
+	robotRunTimeout = 2 * time.Minute
 )
 
 func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -71,7 +72,7 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 
 	a.Logger.Info("received invocation from target user, will respond", slog.String("user_id", m.Author.ID), slog.String("message_id", m.ID))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), robotRunTimeout)
 	defer cancel()
 
 	// Fetch recent messages for context. historyLimit-1 because the triggering
@@ -113,11 +114,11 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 		a.Logger.Warn("failed to prepare conversation run", slog.String("error", err.Error()), slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
 		return
 	}
-	if len(conversationRun.Messages) == 0 {
-		a.Logger.Debug("ignoring invocation with no new discord messages", slog.String("channel_id", m.ChannelID), slog.String("message_id", m.ID))
+	imageAttachments := discordImageAttachmentsForTrigger(mentionsBot, triggerMessage, referenced, cfg.DiscordBotID)
+	robotMessages := a.buildRobotMessagesForRun(ctx, conversationRun, cfg.DiscordBotID, m, imageAttachments)
+	if len(robotMessages) == 0 {
 		return
 	}
-	robotMessages := buildRobotMessages(conversationRun.Messages, cfg.DiscordBotID)
 
 	sessionIDLog := "new"
 	params := rpc.RPCRequestRobotRunParams{
@@ -254,7 +255,7 @@ func insertReferencedMessage(messages []*discordgo.Message, referenced *discordg
 
 // buildRobotMessages converts Discord's newest-first history into the
 // chronological user/assistant message sequence expected by robot_run.
-func buildRobotMessages(messages []*discordgo.Message, botID string) []rpc.RobotRunMessage {
+func buildRobotMessages(messages []*discordgo.Message, botID string, mediaByMessageID map[string][]rpc.RobotRunMedia) []rpc.RobotRunMessage {
 	history := make([]rpc.RobotRunMessage, 0, len(messages))
 
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -265,13 +266,18 @@ func buildRobotMessages(messages []*discordgo.Message, botID string) []rpc.Robot
 			role = rpc.RobotRunMessageRoleAssistant
 		}
 
-		history = append(history, rpc.RobotRunMessage{
+		robotMessage := rpc.RobotRunMessage{
 			Role:    role,
 			Content: discordMessageContent(msg),
 			Author: opt.NewIf(discordMessageAuthor(msg), func(author string) bool {
 				return strings.TrimSpace(author) != ""
 			}),
-		})
+		}
+		if role == rpc.RobotRunMessageRoleUser {
+			robotMessage.Media = mediaByMessageID[msg.ID]
+		}
+
+		history = append(history, robotMessage)
 	}
 
 	return history

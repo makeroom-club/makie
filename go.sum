@@ -33,8 +33,8 @@ github.com/Southclaws/lexorank v1.2.3 h1:M0EHpygYdzTl5AYSBQt7nrGu0s7w92KCIkYF8uX
 github.com/Southclaws/lexorank v1.2.3/go.mod h1:ckwmJY9zyr8dPHX6ZzKiXnAAA/zBX7co/kkbOUSjMM0=
 github.com/Southclaws/opt v0.6.1 h1:Hi6fQZOuZHrDXO7CbV2dsjkAxJvgFUerw91REo06yQE=
 github.com/Southclaws/opt v0.6.1/go.mod h1:zGjXSHmM4ScFX3TLkCr8TdVvd4KAcZq0mwWtzqoqwwQ=
-github.com/Southclaws/storyden v1.26.16-0.20260829160302-76e9668a329b h1:UqXVPrhABQ8FJPUBv0fg12w5wIhSWTEN/zC4Yoa4PKw=
-github.com/Southclaws/storyden v1.26.16-0.20260829160302-76e9668a329b/go.mod h1:b90akZsvvDChnvXKz1bm4gQAqudMvrZmV74tVnwA5yA=
+github.com/Southclaws/storyden v1.26.16-0.20260920190154-3bff5c4fc462 h1:ZmAzzfiPh6XLGGN5z5PWiHwarJGv1ZxgqbK8vqB2ads=
+github.com/Southclaws/storyden v1.26.16-0.20260920190154-3bff5c4fc462/go.mod h1:b90akZsvvDChnvXKz1bm4gQAqudMvrZmV74tVnwA5yA=
 github.com/Southclaws/swirl v1.0.1 h1:xQdYBQ2VURjRNYq7MkjWIRDe9tpEKLJGG0AMnEAkAdo=
 github.com/Southclaws/swirl v1.0.1/go.mod h1:g+5GElHV4itp5HKktH8tiDhNxEUU6TW1uAnxrPzexyI=
 github.com/ThreeDotsLabs/watermill v1.5.1 h1:t5xMivyf9tpmU3iozPqyrCZXHvoV1XQDfihas4sV0fY=

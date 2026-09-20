@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/Southclaws/opt v0.6.1
-	github.com/Southclaws/storyden v1.26.16-0.20260829160302-76e9668a329b
+	github.com/Southclaws/storyden v1.26.16-0.20260920190154-3bff5c4fc462
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/rs/xid v1.6.0
 )

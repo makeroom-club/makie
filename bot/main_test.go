@@ -8,6 +8,7 @@ import (
 	"github.com/Southclaws/opt"
 	"github.com/Southclaws/storyden/lib/plugin/rpc"
 	"github.com/bwmarrin/discordgo"
+	"github.com/rs/xid"
 )
 
 const testBotID = "1400000000000000001"
@@ -50,7 +51,7 @@ func TestBuildRobotMessages(t *testing.T) {
 		},
 	}
 
-	got := buildRobotMessages(discordMessages, testBotID)
+	got := buildRobotMessages(discordMessages, testBotID, nil)
 	want := []rpc.RobotRunMessage{
 		{
 			Role:    rpc.RobotRunMessageRoleUser,
@@ -76,6 +77,43 @@ func TestBuildRobotMessages(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildRobotMessages() = %#v, want %#v", got, want)
+	}
+}
+
+func TestBuildRobotMessagesIncludesOrderedUserMedia(t *testing.T) {
+	firstID := xid.New()
+	secondID := xid.New()
+	messages := []*discordgo.Message{
+		{
+			ID:      "trigger",
+			Author:  &discordgo.User{ID: "user"},
+			Content: "can you see these?",
+		},
+		{
+			ID:      "assistant",
+			Author:  &discordgo.User{ID: testBotID},
+			Content: "Earlier response",
+		},
+	}
+	media := map[string][]rpc.RobotRunMedia{
+		"trigger": {
+			{Type: rpc.RobotRunMediaTypeImage, AssetID: firstID},
+			{Type: rpc.RobotRunMediaTypeImage, AssetID: secondID},
+		},
+		"assistant": {
+			{Type: rpc.RobotRunMediaTypeImage, AssetID: xid.New()},
+		},
+	}
+
+	got := buildRobotMessages(messages, testBotID, media)
+	if len(got) != 2 {
+		t.Fatalf("message count = %d, want 2", len(got))
+	}
+	if len(got[0].Media) != 0 {
+		t.Fatalf("assistant media = %#v, want none", got[0].Media)
+	}
+	if want := media["trigger"]; !reflect.DeepEqual(got[1].Media, want) {
+		t.Fatalf("user media = %#v, want %#v", got[1].Media, want)
 	}
 }
 
