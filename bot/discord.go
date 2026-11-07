@@ -64,7 +64,7 @@ func discordMessageAuthor(message *discordgo.Message) string {
 	return fmt.Sprintf("%s (@%s)", displayName, username)
 }
 
-func (a *PluginApp) connectDiscord(token string, reactionsEnabled bool) {
+func (a *PluginApp) connectDiscord(token string) {
 	if a.discord != nil {
 		a.discord.Close()
 	}
@@ -77,12 +77,8 @@ func (a *PluginApp) connectDiscord(token string, reactionsEnabled bool) {
 		return
 	}
 
-	// Enable required intents.
-	sess.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages
-
-	if reactionsEnabled {
-		sess.Identify.Intents |= discordgo.IntentMessageContent
-	}
+	// Message Content lets Instagram links and reactions work without a mention.
+	sess.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentMessageContent
 
 	a.Logger.Info("adding message handler")
 	sess.AddHandler(a.handleDiscordMessage)
