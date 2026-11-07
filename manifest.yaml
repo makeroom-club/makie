@@ -16,7 +16,7 @@
       "fields":
         [
           {
-            "description": "The Discord bot token for authentication",
+            "description": "The Discord bot token for authentication. Enable Message Content Intent in the Discord Developer Portal for Instagram link replies.",
             "id": "discord_token",
             "label": "Discord Bot Token",
             "type": "string",

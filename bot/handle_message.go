@@ -36,6 +36,10 @@ func (a *PluginApp) handleDiscordMessage(s *discordgo.Session, m *discordgo.Mess
 		return
 	}
 
+	if !m.Author.Bot && m.WebhookID == "" {
+		a.replyWithInstagramLinks(s, m.Message)
+	}
+
 	if m.GuildID != "" && cfg.TypeSafeAPIKey != "" {
 		go a.reactWithWiltedRose(s, m.Message, cfg.TypeSafeAPIKey)
 	}

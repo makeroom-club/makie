@@ -74,7 +74,6 @@ func (a *PluginApp) applyConfig(ctx context.Context, raw map[string]any, require
 	oldToken := a.config.DiscordToken
 	oldBotID := a.config.DiscordBotID
 	oldRobotID := a.config.RobotID
-	oldReactionsEnabled := a.config.TypeSafeAPIKey != ""
 	a.config = cfg
 	a.configured = true
 	a.mu.Unlock()
@@ -82,9 +81,8 @@ func (a *PluginApp) applyConfig(ctx context.Context, raw map[string]any, require
 		a.resetConversationSession()
 	}
 
-	// Message Content is privileged, so only request it when reactions are enabled.
-	if oldToken != cfg.DiscordToken || oldReactionsEnabled != (cfg.TypeSafeAPIKey != "") {
-		a.connectDiscord(cfg.DiscordToken, cfg.TypeSafeAPIKey != "")
+	if oldToken != cfg.DiscordToken {
+		a.connectDiscord(cfg.DiscordToken)
 	}
 
 	a.Logger.Info("plugin configuration applied", slog.Bool("wilted_rose_enabled", cfg.TypeSafeAPIKey != ""))
